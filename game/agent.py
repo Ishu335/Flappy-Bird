@@ -15,37 +15,57 @@ elif torch.backend.cuda.is_available():
 else:
     device="cpu"
 
-def run(self,is_training=True,render=False):
+class Agent():
+    def __int__(self,param_set):
+        self.param_set=param_set
+        with open("parameter.yaml","r") as f:
+            all_param_set=yaml.safe_load(f)
+            param=all_param_set[param_set]
+  
+        self.epsilon_min=param["epsilon_min"]
+        self.epsilon_init=param["epsilon_init"]
+        self.epsilon_decay=param["epsilon_decay"]
+        self.replay_memory_size=param["replay_memory_size"]
+        self.min_batch_size=param["min_batch_size"]
+        self.network_sync_rate=param["network_sync_rate"]
+        self.alpha=param["alpha"]
+        self.gamma=param["gamma"]
+        self.reward_threshold=param["reward_threshold"]
 
-    env = gym.make("FlappyBird-v0", render_mode="human" if render else None)
+        self.loss_fn=nn.MSELoss()
+        self.optimizer=None
+    
+    def run(self,is_training=True,render=False):
 
-    #policy network
-    new_state=env.observation_space.shape[0]    #input dim
-    new_action=env.action_space.n #output dim
+        env = gym.make("FlappyBird-v0", render_mode="human" if render else None)
 
-    policy_dqn=DQN(new_state,new_action)
+        #policy network
+        new_state=env.observation_space.shape[0]    #input dim
+        new_action=env.action_space.n #output dim
 
-    if is_training:
-        memory=ReplayMemory(10000) # we take static size of memory  
+        policy_dqn=DQN(new_state,new_action)
 
-    for episode in itertools.count():
-        state, _ = env.reset()
-        episode_rewards=0
+        if is_training:
+            memory=ReplayMemory(self.replay_memory_size) # we take static size of memory  
 
-        while not terminated: 
-            # Next action:
-            # (feed the observation to your agent here)
-            action = env.action_space.sample()
+        for episode in itertools.count():
+            state, _ = env.reset()
+            episode_rewards=0
 
-            # Processing:
-            obs, reward, terminated, _, _ = env.step(action)
+            while not terminated: 
+                # Next action:
+                # (feed the observation to your agent here)
+                action = env.action_space.sample()
 
-            #store the experiance in Experiance Replay in training Mode 
-            if is_training:
-                memory.append(( state,action,new_state,reward,terminated))
+                # Processing:
+                obs, reward, terminated, _, _ = env.step(action)
 
-            state=new_state
-            episode_rewards+=reward   
+                #store the experiance in Experiance Replay in training Mode 
+                if is_training:
+                    memory.append(( state,action,new_state,reward,terminated))
 
-        print(f"for Episode Rewards ={episode+1} with total rewards ={episode_rewards}")
-    # env.close()
+                state=new_state
+                episode_rewards+=reward   
+
+            print(f"for Episode Rewards ={episode+1} with total rewards ={episode_rewards}")
+        # env.close()
