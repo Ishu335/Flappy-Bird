@@ -5,6 +5,7 @@ from dqn import DQN
 from experiance_replay  import ReplayMemory  # we have too use this at trining time
 import itertools
 import yaml
+import random
 import torch.nn as nn
 import torch.optimizer as optim
 
@@ -47,15 +48,34 @@ class Agent():
 
         if is_training:
             memory=ReplayMemory(self.replay_memory_size) # we take static size of memory  
+            epsilon=self.epsilon_init
+            
+            #target network
+            target_dqn=DQN(new_state,new_action).to(device)
+            #copy wight and bies values from policy network => target_network
+            target_dqn.load_state_dict(policy_dqn.state_dict())
+
+            steps=0
+
+            # Optimizer
+            self.optimizer=optim.Adam(policy_dqn.parameters(),lr=self.alpha)
 
         for episode in itertools.count():
             state, _ = env.reset()
+            state=torch.tensor(state,dtype=torch.float,device=device)
+
             episode_rewards=0
+            terminated=False
 
             while not terminated: 
-                # Next action:
-                # (feed the observation to your agent here)
-                action = env.action_space.sample()
+                if is_training and random.random()<epsilon:
+                    # Next action:
+                    # (feed the observation to your agent here)
+                    action = env.action_space.sample() # exploration
+                    action=torch.tensor(action,dtype=torch.long,device=device)
+                else:
+                    with torch.no_grad():
+                        action=policy_dqn(state.unsqueeze(dim=0)).squeeze().argmax() #exploit
 
                 # Processing:
                 obs, reward, terminated, _, _ = env.step(action)
@@ -63,9 +83,43 @@ class Agent():
                 #store the experiance in Experiance Replay in training Mode 
                 if is_training:
                     memory.append(( state,action,new_state,reward,terminated))
+                    steps+=1
 
                 state=new_state
-                episode_rewards+=reward   
+                episode_rewards+=reward
 
-            print(f"for Episode Rewards ={episode+1} with total rewards ={episode_rewards}")
+            print(f"for Episode Rewards ={episode+1} with total rewards ={episode_rewards} epsilon={epsilon}")
+            
+            if is_training:
+                # epsilon decay is done when training part not at testing part
+                epsilon.max(epsilon*self.epsilon_decay,self.epsilon_min)
+
+            if is_training and len(memory)>self.min_batch_size:
+                #get sample
+                min_batch=memory.sample(self.min_batch_size)
+
+                optimize(min_batch,policy_dqn,target_dqn)
+
+                #sync the networks 
+                if steps >self.network_sync_rate:
+                    target_dqn.load_state_dict(policy_dqn.state_dict())
+                    # re-initalize
+                    steps=0
         # env.close()
+
+    def optimize(self,min_batch,policy_dqn,target_dqn):
+        #get Experiance =>mini batch
+        for state,action,next_state,reward,terminated in min_batch:
+            if terminated:
+                target=reward
+            else:
+                with torch.no_grad():
+                    target_q=reward+self.gamma*target_dqn(next_state).max()  # this Y-True
+            current_q=policy_dqn(state) # this predict Y
+
+            #loss =MSELoss
+            loss=self.loss_fn(current_q,target_q)             
+
+            self.optimizer.zero_grad()
+            loss.backward() #back-propation
+            self.optimizer.step() #update wight and bieas vlues
