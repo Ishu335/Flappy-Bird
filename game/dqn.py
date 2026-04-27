@@ -9,7 +9,7 @@ class DQN(nn.Module):
         self.model=nn.Sequential(
 
                     nn.Linear(state_din,hidden_din),
-                    nn.ReLu(),
+                    nn.ReLU(),
 
                     nn.Linear(hidden_din,action_din )
                 )
